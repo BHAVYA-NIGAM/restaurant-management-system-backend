@@ -1,0 +1,74 @@
+name: PR Checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+env:
+  BRANCH_PATTERN: '^[A-Z]{2}_A[0-9]_[0-9]{2}$'
+  STORY_PATTERN: '^\[Story\+[0-9]+\]: .+'
+
+jobs:
+  validate:
+    name: Validate Pull Request
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate branch name
+        env:
+          BRANCH_NAME: ${{ github.head_ref }}
+        run: |
+          if [[ ! "$BRANCH_NAME" =~ $BRANCH_PATTERN ]]; then
+            echo "Invalid branch name: $BRANCH_NAME"
+            echo "Expected format: BN_A1_00"
+            exit 1
+          fi
+
+          echo "Branch name OK: $BRANCH_NAME"
+
+      - name: Validate PR title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if [[ ! "$PR_TITLE" =~ $STORY_PATTERN ]]; then
+            echo "Invalid PR title: $PR_TITLE"
+            echo "Expected format: [Story+123]: Description"
+            exit 1
+          fi
+
+          echo "PR title OK: $BRANCH_NAME"
+
+      - name: Validate commit messages
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git fetch origin "$BASE_REF"
+
+          commits=$(git log --format=%s "origin/$BASE_REF..$HEAD_SHA")
+
+          if [[ -z "$commits" ]]; then
+            echo "No commits found in the PR range."
+            exit 1
+          fi
+
+          failed=0
+
+          while IFS= read -r message; do
+            if [[ ! "$message" =~ $STORY_PATTERN ]]; then
+              echo "Invalid commit message: $message"
+              echo "Expected format: [Story+123]: Description"
+              failed=1
+            fi
+          done <<< "$commits"
+
+          if [[ "$failed" -ne 0 ]]; then
+            exit 1
+          fi
+
+          echo "All commit messages OK"
